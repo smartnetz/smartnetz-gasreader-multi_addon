@@ -6,11 +6,9 @@ from typing import Dict, Any, Set
 
 import paho.mqtt.client as mqtt
 
-def log(msg):
-    print("[SMARTNETZ]", msg, flush=True)
-
-
-
+# ------------------------------------------------------------
+# Konfiguration (aus Add-on ENV)
+# ------------------------------------------------------------
 MQTT_HOST = os.getenv("MQTT_HOST", "core-mosquitto")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USERNAME = os.getenv("MQTT_USERNAME", "")
@@ -20,13 +18,29 @@ MQTT_TLS = os.getenv("MQTT_TLS", "false").lower() == "true"
 DISCOVERY_PREFIX = "homeassistant"
 TELE_PREFIX = "tele"
 
+# ------------------------------------------------------------
+# Logging
+# ------------------------------------------------------------
+def log(msg: str):
+    print(f"[SMARTNETZ] {msg}", flush=True)
+
+# ------------------------------------------------------------
+# MQTT Topics
+# ------------------------------------------------------------
 SUB_JSON = f"{TELE_PREFIX}/+/json"
 SUB_MAIN = f"{TELE_PREFIX}/+/main/#"
-SUB_LWT = f"{TELE_PREFIX}/+/LWT"
+SUB_LWT  = f"{TELE_PREFIX}/+/LWT"
 
+# ------------------------------------------------------------
+# Runtime State
+# ------------------------------------------------------------
 DISCOVERED: Set[str] = set()
-MODE: Dict[str, str] = {}  # dev -> "json" | "main"
+MODE: Dict[str, str] = {}   # device -> "json" | "main"
 
+# ------------------------------------------------------------
+# Sensor Definitionen
+# key, name, unit, device_class, state_class
+# ------------------------------------------------------------
 SENSOR_DEFS = [
     ("gastotal", "Zaehlerstand", "m³", "gas", "total_increasing"),
     ("value", "Zaehlung seit Nullung", "m³", None, "measurement"),
@@ -37,9 +51,13 @@ SENSOR_DEFS = [
     ("db_yesterday_m3", "Verbrauch Volumen vorgestern", "m³", None, "measurement"),
     ("db_yesterday_kwh", "Verbrauch Energie vorgestern", "kWh", "energy", "measurement"),
 ]
-log(f"Discovery for device {dev}")
 
+# ------------------------------------------------------------
+# Discovery Publisher
+# ------------------------------------------------------------
 def publish_discovery(client: mqtt.Client, dev: str) -> None:
+    log(f"Publishing discovery for {dev}")
+
     node_id = f"smartnetz_gasreader_{dev}"
 
     device = {
@@ -84,42 +102,63 @@ def publish_discovery(client: mqtt.Client, dev: str) -> None:
 
         client.publish(discovery_topic, json.dumps(payload), retain=True)
 
+# ------------------------------------------------------------
+# MQTT Callbacks (Paho 2.x kompatibel)
+# ------------------------------------------------------------
 def on_connect(client, userdata, flags, reason_code, properties=None):
     if reason_code != 0:
+        log(f"MQTT connect failed: {reason_code}")
         return
+
+    log("MQTT connected")
     client.subscribe(SUB_JSON)
     client.subscribe(SUB_MAIN)
     client.subscribe(SUB_LWT)
 
 def on_message(client, userdata, msg):
-    parts = msg.topic.split("/")
+    topic = msg.topic
+    parts = topic.split("/")
 
-    # tele/<dev>/json
+    # --------------------------------------------------------
+    # tele/<device>/json
+    # --------------------------------------------------------
     if len(parts) == 3 and parts[0] == TELE_PREFIX and parts[2] == "json":
         dev = parts[1]
         try:
             data = json.loads(msg.payload.decode())
-        except Exception:
+        except Exception as e:
+            log(f"JSON parse error from {dev}: {e}")
             return
+
         if "gastotal" in data and "value" in data:
             MODE[dev] = "json"
+            log(f"Valid JSON from {dev}")
             if dev not in DISCOVERED:
                 DISCOVERED.add(dev)
                 publish_discovery(client, dev)
         return
 
-    # tele/<dev>/main/<key>
+    # --------------------------------------------------------
+    # tele/<device>/main/<key>
+    # --------------------------------------------------------
     if len(parts) == 4 and parts[0] == TELE_PREFIX and parts[2] == "main":
         dev = parts[1]
         key = parts[3]
+
         if key in ("gastotal", "value"):
             MODE.setdefault(dev, "main")
+            log(f"Main value {key} from {dev}")
             if dev not in DISCOVERED:
                 DISCOVERED.add(dev)
                 publish_discovery(client, dev)
         return
 
+# ------------------------------------------------------------
+# Main Loop
+# ------------------------------------------------------------
 def main():
+    log("Starting Smartnetz Gasreader Discovery")
+
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
     if MQTT_USERNAME:
