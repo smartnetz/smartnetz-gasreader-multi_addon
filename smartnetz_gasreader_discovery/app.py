@@ -37,6 +37,7 @@ SENSOR_DEFS = [
     ("db_yesterday_m3", "Verbrauch Volumen vorgestern", "m³", None, "measurement"),
     ("db_yesterday_kwh", "Verbrauch Energie vorgestern", "kWh", "energy", "measurement"),
 ]
+log(f"Discovery for device {dev}")
 
 def publish_discovery(client: mqtt.Client, dev: str) -> None:
     node_id = f"smartnetz_gasreader_{dev}"
