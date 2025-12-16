@@ -79,13 +79,14 @@ def publish_discovery_for_device(client: mqtt.Client, dev: str) -> None:
 
         client.publish(discovery_topic, json.dumps(payload), retain=True)
 
-def on_connect(client: mqtt.Client, userdata: Any, flags: Dict[str, Any], rc: int) -> None:
-    if rc != 0:
+def on_connect(client, userdata, flags, reason_code, properties=None):
+    if reason_code != 0:
         return
     client.subscribe(SUB_JSON)
     client.subscribe(SUB_LWT)
     for dev in list(DISCOVERED):
         publish_discovery_for_device(client, dev)
+
 
 def on_message(client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> None:
     topic = msg.topic
