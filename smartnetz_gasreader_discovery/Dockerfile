@@ -1,4 +1,4 @@
-ARG BUILD_FROM
+ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base-python:3.12
 FROM ${BUILD_FROM}
 
 RUN pip install --no-cache-dir --upgrade pip
