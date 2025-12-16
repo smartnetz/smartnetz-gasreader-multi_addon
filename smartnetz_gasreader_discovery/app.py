@@ -2,7 +2,7 @@ import os
 import json
 import ssl
 import time
-from typing import Dict, Any, Set, Optional
+from typing import Dict, Any, Set
 
 import paho.mqtt.client as mqtt
 
@@ -12,14 +12,15 @@ MQTT_USERNAME = os.getenv("MQTT_USERNAME", "")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "")
 MQTT_TLS = os.getenv("MQTT_TLS", "false").lower() == "true"
 
-DISCOVERY_PREFIX = os.getenv("DISCOVERY_PREFIX", "homeassistant")
-TELE_PREFIX = os.getenv("TELE_PREFIX", "tele").strip("/")
-JSON_SUFFIX = os.getenv("JSON_SUFFIX", "json").strip("/")
+DISCOVERY_PREFIX = "homeassistant"
+TELE_PREFIX = "tele"
 
-SUB_JSON = f"{TELE_PREFIX}/+/{JSON_SUFFIX}"
+SUB_JSON = f"{TELE_PREFIX}/+/json"
+SUB_MAIN = f"{TELE_PREFIX}/+/main/#"
 SUB_LWT = f"{TELE_PREFIX}/+/LWT"
 
 DISCOVERED: Set[str] = set()
+MODE: Dict[str, str] = {}  # dev -> "json" | "main"
 
 SENSOR_DEFS = [
     ("gastotal", "Zaehlerstand", "m³", "gas", "total_increasing"),
@@ -32,48 +33,46 @@ SENSOR_DEFS = [
     ("db_yesterday_kwh", "Verbrauch Energie vorgestern", "kWh", "energy", "measurement"),
 ]
 
-def parse_device_topic(full_topic: str) -> str:
-    # tele/<dev>/json
-    parts = full_topic.split("/")
-    if len(parts) >= 3 and parts[0] == TELE_PREFIX and parts[2] == JSON_SUFFIX:
-        return parts[1]
-    return ""
-
-def _json_value_template(key: str) -> str:
-    # robust if Tasmota publishes strings: "5132.63"
-    return "{{ (value_json.%s | default('0') | string | replace(',', '.') ) | float }}" % key
-
-def publish_discovery_for_device(client: mqtt.Client, dev: str) -> None:
+def publish_discovery(client: mqtt.Client, dev: str) -> None:
     node_id = f"smartnetz_gasreader_{dev}"
-    device_obj = {
+
+    device = {
         "identifiers": [node_id],
         "name": f"Smartnetz Gasreader {dev}",
         "manufacturer": "Smartnetz",
         "model": "Gasreader",
     }
 
-    availability = [
-        {
-            "topic": f"{TELE_PREFIX}/{dev}/LWT",
-            "payload_available": "Online",
-            "payload_not_available": "Offline",
-        }
-    ]
+    availability = [{
+        "topic": f"{TELE_PREFIX}/{dev}/LWT",
+        "payload_available": "Online",
+        "payload_not_available": "Offline",
+    }]
 
-    state_topic = f"{TELE_PREFIX}/{dev}/{JSON_SUFFIX}"
-
-    for key, suffix, unit, dev_class, st_class in SENSOR_DEFS:
+    for key, name, unit, dev_class, state_class in SENSOR_DEFS:
         discovery_topic = f"{DISCOVERY_PREFIX}/sensor/{node_id}/{key}/config"
+
+        if MODE.get(dev) == "main":
+            state_topic = f"{TELE_PREFIX}/{dev}/main/{key}"
+            value_template = "{{ value | float }}"
+        else:
+            state_topic = f"{TELE_PREFIX}/{dev}/json"
+            value_template = (
+                "{{ (value_json.%s | default('0') | string "
+                "| replace(',', '.') ) | float }}" % key
+            )
+
         payload: Dict[str, Any] = {
-            "name": suffix,
+            "name": name,
             "unique_id": f"{node_id}_{key}",
             "state_topic": state_topic,
-            "value_template": _json_value_template(key),
             "unit_of_measurement": unit,
-            "state_class": st_class,
-            "device": device_obj,
+            "state_class": state_class,
+            "device": device,
             "availability": availability,
+            "value_template": value_template,
         }
+
         if dev_class:
             payload["device_class"] = dev_class
 
@@ -83,34 +82,40 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
     if reason_code != 0:
         return
     client.subscribe(SUB_JSON)
+    client.subscribe(SUB_MAIN)
     client.subscribe(SUB_LWT)
-    for dev in list(DISCOVERED):
-        publish_discovery_for_device(client, dev)
 
+def on_message(client, userdata, msg):
+    parts = msg.topic.split("/")
 
-def on_message(client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> None:
-    topic = msg.topic
-    if topic.startswith(f"{TELE_PREFIX}/") and topic.endswith(f"/{JSON_SUFFIX}"):
-        dev = parse_device_topic(topic)
-        if not dev:
-            return
-
+    # tele/<dev>/json
+    if len(parts) == 3 and parts[0] == TELE_PREFIX and parts[2] == "json":
+        dev = parts[1]
         try:
-            payload = msg.payload.decode("utf-8", errors="ignore").strip()
-            data = json.loads(payload)
+            data = json.loads(msg.payload.decode())
         except Exception:
             return
+        if "gastotal" in data and "value" in data:
+            MODE[dev] = "json"
+            if dev not in DISCOVERED:
+                DISCOVERED.add(dev)
+                publish_discovery(client, dev)
+        return
 
-        # Discover only if it looks like a Smartnetz gasreader payload
-        if "gastotal" not in data or "value" not in data:
-            return
+    # tele/<dev>/main/<key>
+    if len(parts) == 4 and parts[0] == TELE_PREFIX and parts[2] == "main":
+        dev = parts[1]
+        key = parts[3]
+        if key in ("gastotal", "value"):
+            MODE.setdefault(dev, "main")
+            if dev not in DISCOVERED:
+                DISCOVERED.add(dev)
+                publish_discovery(client, dev)
+        return
 
-        if dev not in DISCOVERED:
-            DISCOVERED.add(dev)
-            publish_discovery_for_device(client, dev)
-
-def main() -> None:
+def main():
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+
     if MQTT_USERNAME:
         client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
@@ -121,12 +126,12 @@ def main() -> None:
     client.on_connect = on_connect
     client.on_message = on_message
 
-    client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+    client.connect(MQTT_HOST, MQTT_PORT, 60)
     client.loop_start()
 
     try:
         while True:
-            time.sleep(5)
+            time.sleep(10)
     finally:
         client.loop_stop()
         client.disconnect()
