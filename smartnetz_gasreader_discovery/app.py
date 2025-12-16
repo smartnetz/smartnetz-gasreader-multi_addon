@@ -6,6 +6,11 @@ from typing import Dict, Any, Set
 
 import paho.mqtt.client as mqtt
 
+def log(msg):
+    print("[SMARTNETZ]", msg, flush=True)
+
+
+
 MQTT_HOST = os.getenv("MQTT_HOST", "core-mosquitto")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USERNAME = os.getenv("MQTT_USERNAME", "")
