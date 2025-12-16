@@ -1,6 +1,15 @@
-Smartnetz Gasreader Discovery Add-on
+Smartnetz Gasreader MQTT Discovery Add-on (Für ein oder mehrere Smartnetz Gasreader)
 
-Funktion
+
+-##################  INSTALLATION  ############################
+1) Repository in Home Assistant Add-on Store  hinzufuegen
+2) Add-on installieren
+3) MQTT Broker Zugangsdaten in den Add-on Optionen setzen (Reiter Konfiguration)
+4) Addon Starten
+
+Bei Problemen hilft dir der Smartnetz Support unter: +43 676 555 666 1 (per Whatsapp)
+
+Funktion:
 - Lauscht auf tele/+/json
 - Erkennt automatisch Tasmota Topics (z.B. Gaszaehler, Gaszaehler_Ort1, ...)
 - Legt per MQTT Discovery ein eigenes Home-Assistant Geraet an
@@ -10,13 +19,8 @@ Funktion
 Voraussetzungen
 - MQTT Broker in Home Assistant (z.B. Mosquitto Add-on)
 - Tasmota publish:
-  tele/<Topic>/json (JSON Payload)
+  tele/<Topic>/json (JSON Payload) - wird automatisch bereitgestellt.
 
-Install
-- Repo in Home Assistant Add-on Store als Custom Repository hinzufuegen
-- Add-on installieren
-- MQTT Broker Zugangsdaten in den Add-on Optionen setzen
-- Starten
 
 Topic Wahl in Tasmota
 - In Tasmota unter MQTT Topic den gewuenschten Namen setzen
