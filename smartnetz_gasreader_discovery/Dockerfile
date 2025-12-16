@@ -1,8 +1,7 @@
-ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-python:3.12
+ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
 RUN pip install --no-cache-dir --upgrade pip
-
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
