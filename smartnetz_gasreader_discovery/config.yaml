@@ -1,0 +1,36 @@
+name: Smartnetz Gasreader Discovery
+version: "1.0.0"
+slug: smartnetz_gasreader_discovery
+description: MQTT Discovery fuer Smartnetz Gasreader (Topic wird in Tasmota gesetzt, Add-on erkennt automatisch tele/+/json)
+url: https://github.com/DEINUSER/DEINREPO
+startup: services
+boot: auto
+init: false
+arch:
+  - amd64
+  - aarch64
+  - armv7
+  - armhf
+  - i386
+options:
+  mqtt_host: core-mosquitto
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+  mqtt_tls: false
+  discovery_prefix: homeassistant
+  tele_prefix: tele
+  json_suffix: json
+schema:
+  mqtt_host: str
+  mqtt_port: int
+  mqtt_username: str
+  mqtt_password: password
+  mqtt_tls: bool
+  discovery_prefix: str
+  tele_prefix: str
+  json_suffix: str
+logs:
+  - type: stdout
+map:
+  - config:rw
