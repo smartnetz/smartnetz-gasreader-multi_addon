@@ -25,17 +25,15 @@ def log(msg: str):
     print(f"[SMARTNETZ] {msg}", flush=True)
 
 # ------------------------------------------------------------
-# MQTT Topics
+# MQTT Topics (JSON ONLY)
 # ------------------------------------------------------------
 SUB_JSON = f"{TELE_PREFIX}/+/json"
-SUB_MAIN = f"{TELE_PREFIX}/+/main/#"
 SUB_LWT  = f"{TELE_PREFIX}/+/LWT"
 
 # ------------------------------------------------------------
 # Runtime State
 # ------------------------------------------------------------
 DISCOVERED: Set[str] = set()
-MODE: Dict[str, str] = {}   # device -> "json" | "main"
 
 # ------------------------------------------------------------
 # Sensor Definitionen
@@ -53,10 +51,10 @@ SENSOR_DEFS = [
 ]
 
 # ------------------------------------------------------------
-# Discovery Publisher
+# Discovery Publisher (JSON only)
 # ------------------------------------------------------------
 def publish_discovery(client: mqtt.Client, dev: str) -> None:
-    log(f"Publishing discovery for {dev}")
+    log(f"Publishing JSON discovery for {dev}")
 
     node_id = f"smartnetz_gasreader_{dev}"
 
@@ -76,25 +74,18 @@ def publish_discovery(client: mqtt.Client, dev: str) -> None:
     for key, name, unit, dev_class, state_class in SENSOR_DEFS:
         discovery_topic = f"{DISCOVERY_PREFIX}/sensor/{node_id}/{key}/config"
 
-        if MODE.get(dev) == "main":
-            state_topic = f"{TELE_PREFIX}/{dev}/main/{key}"
-            value_template = "{{ value | float }}"
-        else:
-            state_topic = f"{TELE_PREFIX}/{dev}/json"
-            value_template = (
-                "{{ (value_json.%s | default('0') | string "
-                "| replace(',', '.') ) | float }}" % key
-            )
-
         payload: Dict[str, Any] = {
             "name": name,
             "unique_id": f"{node_id}_{key}",
-            "state_topic": state_topic,
+            "state_topic": f"{TELE_PREFIX}/{dev}/json",
             "unit_of_measurement": unit,
             "state_class": state_class,
             "device": device,
             "availability": availability,
-            "value_template": value_template,
+            "value_template": (
+                "{{ (value_json.%s | default('0') | string "
+                "| replace(',', '.') ) | float }}" % key
+            ),
         }
 
         if dev_class:
@@ -103,16 +94,15 @@ def publish_discovery(client: mqtt.Client, dev: str) -> None:
         client.publish(discovery_topic, json.dumps(payload), retain=True)
 
 # ------------------------------------------------------------
-# MQTT Callbacks (Paho 2.x kompatibel)
+# MQTT Callbacks
 # ------------------------------------------------------------
 def on_connect(client, userdata, flags, reason_code, properties=None):
     if reason_code != 0:
         log(f"MQTT connect failed: {reason_code}")
         return
 
-    log("MQTT connected")
+    log("MQTT connected (JSON only)")
     client.subscribe(SUB_JSON)
-    client.subscribe(SUB_MAIN)
     client.subscribe(SUB_LWT)
 
 def on_message(client, userdata, msg):
@@ -124,40 +114,28 @@ def on_message(client, userdata, msg):
     # --------------------------------------------------------
     if len(parts) == 3 and parts[0] == TELE_PREFIX and parts[2] == "json":
         dev = parts[1]
+
         try:
             data = json.loads(msg.payload.decode())
         except Exception as e:
             log(f"JSON parse error from {dev}: {e}")
             return
 
+        # Minimal-Check: Pflichtfelder vorhanden?
         if "gastotal" in data and "value" in data:
-            MODE[dev] = "json"
             log(f"Valid JSON from {dev}")
-            if dev not in DISCOVERED:
-                DISCOVERED.add(dev)
-                publish_discovery(client, dev)
-        return
 
-    # --------------------------------------------------------
-    # tele/<device>/main/<key>
-    # --------------------------------------------------------
-    if len(parts) == 4 and parts[0] == TELE_PREFIX and parts[2] == "main":
-        dev = parts[1]
-        key = parts[3]
+            # Discovery immer neu publishen (überschreibt retained sauber)
+            publish_discovery(client, dev)
+            DISCOVERED.add(dev)
 
-        if key in ("gastotal", "value"):
-            MODE.setdefault(dev, "main")
-            log(f"Main value {key} from {dev}")
-            if dev not in DISCOVERED:
-                DISCOVERED.add(dev)
-                publish_discovery(client, dev)
         return
 
 # ------------------------------------------------------------
 # Main Loop
 # ------------------------------------------------------------
 def main():
-    log("Starting Smartnetz Gasreader Discovery")
+    log("Starting Smartnetz Gasreader Discovery (JSON only)")
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
