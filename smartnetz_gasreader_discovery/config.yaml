@@ -1,5 +1,5 @@
 name: Smartnetz Gasreader Discovery Multidevice
-version: "2.0.4"
+version: "3.0.0"
 slug: smartnetz_gasreader_discovery
 description: MQTT Discovery fuer Smartnetz Gasreader (Topic wird in Tasmota gesetzt, Add-on erkennt automatisch tele/+/json)
 url: https://github.com/smartnetz/smartnetz-gasreader-multi_addon
