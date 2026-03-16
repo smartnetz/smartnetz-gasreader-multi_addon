@@ -7,7 +7,7 @@ Smartnetz Gasreader & Wasserreader MQTT Discovery Add-on (Für ein oder mehrere 
 3) MQTT Broker Zugangsdaten in den Add-on Optionen setzen (Reiter Konfiguration)
 4) Addon Starten
 
-Bei Problemen hilft dir der Smartnetz Support unter: +43 676 555 666 1 (per Whatsapp)
+Bei Problemen hilft dir der Smartnetz Support unter: +43 676 793 0880 (per Whatsapp)
 
 Funktion:
 - Lauscht auf tele/+/json
