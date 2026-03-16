@@ -1,4 +1,4 @@
-Smartnetz Gasreader MQTT Discovery Add-on (Für ein oder mehrere Smartnetz Gasreader)
+Smartnetz Gasreader & Wasserreader MQTT Discovery Add-on (Für ein oder mehrere Smartnetz Gasreader)
 
 
 -##################  INSTALLATION  ############################
