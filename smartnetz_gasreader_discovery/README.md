@@ -9,6 +9,9 @@ Smartnetz Gasreader & Wasserreader MQTT Discovery Add-on (Für ein oder mehrere 
 
 Bei Problemen hilft dir der Smartnetz Support unter: +43 676 793 0880 (per Whatsapp)
 
+Achtung!
+Der Stromreader erkennt Entitäten automatisch und muss nicht via Addon verbunden werden.
+
 Funktion:
 - Lauscht auf tele/+/json
 - Erkennt automatisch Tasmota Topics (z.B. Gaszaehler, Gaszaehler_Ort1, ...)
