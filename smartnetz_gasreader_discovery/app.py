@@ -2,9 +2,7 @@ import os
 import json
 import ssl
 from typing import Dict, Any, Set, List, Tuple, Optional
-
 import paho.mqtt.client as mqtt
-
 
 MQTT_HOST = os.getenv("MQTT_HOST", "core-mosquitto")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
@@ -14,6 +12,9 @@ MQTT_TLS = os.getenv("MQTT_TLS", "false").lower() == "true"
 
 DISCOVERY_PREFIX = os.getenv("DISCOVERY_PREFIX", "homeassistant")
 TELE_PREFIX = "tele"
+
+SUB_JSON = f"{TELE_PREFIX}/+/json"
+SUB_LWT = f"{TELE_PREFIX}/+/LWT"
 
 DISCOVERED_GAS: Set[str] = set()
 DISCOVERED_WATER: Set[str] = set()
@@ -39,6 +40,7 @@ WATER_SENSOR_DEFS: List[Tuple[str, str, str, Optional[str], str]] = [
     ("dbyesterday_l", "Wasserverbrauch vorgestern", "L", "water", "measurement"),
 ]
 
+# (json_key, Anzeigename, Einheit, device_class, state_class)
 VISION_SENSOR_DEFS: List[Tuple[str, str, str, Optional[str], Optional[str]]] = [
     ("value", "Wasserzählerstand", "m³", "water", "total_increasing"),
     ("flow_l_min", "Durchfluss", "L/min", "water", "measurement"),
@@ -62,7 +64,7 @@ VISION_SENSOR_DEFS: List[Tuple[str, str, str, Optional[str], Optional[str]]] = [
 ]
 
 
-def log(msg: str) -> None:
+def log(msg: str):
     print(f"[SMARTNETZ] {msg}", flush=True)
 
 
@@ -125,7 +127,7 @@ def publish_sensor_configs(
 
 
 def publish_gas_discovery(client: mqtt.Client, dev: str) -> None:
-    node_id = f"smartnetz_gasreader_{safe_id(dev)}"
+    node_id = f"smartnetz_gasreader_{dev}"
 
     publish_sensor_configs(
         client=client,
@@ -140,7 +142,7 @@ def publish_gas_discovery(client: mqtt.Client, dev: str) -> None:
 
 
 def publish_water_discovery(client: mqtt.Client, dev: str) -> None:
-    node_id = f"smartnetz_wasserreader_{safe_id(dev)}"
+    node_id = f"smartnetz_wasserreader_{dev}"
 
     publish_sensor_configs(
         client=client,
@@ -170,7 +172,6 @@ def publish_vision_discovery(
         "name": device_name,
         "manufacturer": "Smartnetz",
         "model": "KI Vision",
-        "sw_version": str(data.get("config_version", "")),
     }
 
     availability = build_availability(dev)
@@ -189,14 +190,16 @@ def publish_vision_discovery(
 
         if unit:
             payload["unit_of_measurement"] = unit
+
         if dev_class:
             payload["device_class"] = dev_class
+
         if state_class:
             payload["state_class"] = state_class
 
         client.publish(discovery_topic, json.dumps(payload), retain=True)
 
-    text_sensors = [
+    text_sensor_defs = [
         ("status", "Erkennungsstatus"),
         ("raw", "Rohwert"),
         ("job_id", "Job-ID"),
@@ -204,8 +207,9 @@ def publish_vision_discovery(
         ("framesize", "Kameraauflösung"),
     ]
 
-    for key, name in text_sensors:
+    for key, name in text_sensor_defs:
         discovery_topic = f"{DISCOVERY_PREFIX}/sensor/{node_id}/{key}/config"
+
         payload = {
             "name": name,
             "unique_id": f"{node_id}_{key}",
@@ -214,9 +218,10 @@ def publish_vision_discovery(
             "availability": availability,
             "value_template": make_text_template(key),
         }
+
         client.publish(discovery_topic, json.dumps(payload), retain=True)
 
-    leak_topic = f"{DISCOVERY_PREFIX}/binary_sensor/{node_id}/leak/config"
+    leak_discovery_topic = f"{DISCOVERY_PREFIX}/binary_sensor/{node_id}/leak/config"
     leak_payload = {
         "name": "Leck erkannt",
         "unique_id": f"{node_id}_leak",
@@ -228,7 +233,8 @@ def publish_vision_discovery(
         "payload_on": "ON",
         "payload_off": "OFF",
     }
-    client.publish(leak_topic, json.dumps(leak_payload), retain=True)
+
+    client.publish(leak_discovery_topic, json.dumps(leak_payload), retain=True)
 
     log(f"KI Vision discovery published for {dev} (DID {did or 'unbekannt'})")
 
@@ -263,45 +269,43 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
 def on_message(client, userdata, msg):
     parts = msg.topic.split("/")
 
-    if len(parts) != 3 or parts[0] != TELE_PREFIX or parts[2] != "json":
-        return
+    if len(parts) == 3 and parts[0] == TELE_PREFIX and parts[2] == "json":
+        dev = parts[1]
 
-    dev = parts[1]
+        try:
+            payload_text = msg.payload.decode("utf-8", errors="ignore")
+            data = json.loads(payload_text)
+        except Exception as e:
+            log(f"JSON parse error from {dev}: {e}")
+            return
 
-    try:
-        payload_text = msg.payload.decode("utf-8", errors="ignore")
-        data = json.loads(payload_text)
-    except Exception as exc:
-        log(f"JSON parse error from {dev}: {exc}")
-        return
+        if not isinstance(data, dict):
+            log(f"Invalid JSON object from {dev}")
+            return
 
-    if not isinstance(data, dict):
-        log(f"Invalid JSON payload from {dev}: expected object")
-        return
+        if is_gasreader_json(data):
+            if dev not in DISCOVERED_GAS:
+                log(f"Valid Gasreader JSON from {dev} -> publish discovery")
+                publish_gas_discovery(client, dev)
+                DISCOVERED_GAS.add(dev)
 
-    if is_gasreader_json(data):
-        if dev not in DISCOVERED_GAS:
-            log(f"Valid Gasreader JSON from {dev} -> publish discovery")
-            publish_gas_discovery(client, dev)
-            DISCOVERED_GAS.add(dev)
+        elif is_waterreader_json(data):
+            if dev not in DISCOVERED_WATER:
+                log(f"Valid Wasserreader JSON from {dev} -> publish discovery")
+                publish_water_discovery(client, dev)
+                DISCOVERED_WATER.add(dev)
 
-    elif is_waterreader_json(data):
-        if dev not in DISCOVERED_WATER:
-            log(f"Valid Wasserreader JSON from {dev} -> publish discovery")
-            publish_water_discovery(client, dev)
-            DISCOVERED_WATER.add(dev)
+        elif is_vision_json(data):
+            did = str(data.get("did", "")).strip()
+            discovery_key = f"{dev}:{did}"
 
-    elif is_vision_json(data):
-        did = str(data.get("did", "")).strip()
-        discovery_key = f"{dev}:{did}"
+            if discovery_key not in DISCOVERED_VISION:
+                log(f"Valid KI Vision JSON from {dev} (DID {did}) -> publish discovery")
+                publish_vision_discovery(client, dev, data)
+                DISCOVERED_VISION.add(discovery_key)
 
-        if discovery_key not in DISCOVERED_VISION:
-            log(f"Valid KI Vision JSON from {dev} (DID {did}) -> publish discovery")
-            publish_vision_discovery(client, dev, data)
-            DISCOVERED_VISION.add(discovery_key)
-
-    else:
-        log(f"Unknown JSON structure from {dev}: keys={list(data.keys())}")
+        else:
+            log(f"Unknown JSON structure from {dev}: keys={list(data.keys())}")
 
 
 def main():
