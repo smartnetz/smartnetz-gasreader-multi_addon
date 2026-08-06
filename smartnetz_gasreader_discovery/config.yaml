@@ -1,5 +1,5 @@
 name: Smartnetz Geräte Discovery Multidevice
-version: "6.0.0"
+version: "6.0.1"
 slug: smartnetz_gasreader_discovery
 description: MQTT Discovery fuer Smartnetz Geräte (Topic wird in Tasmota gesetzt, Add-on erkennt automatisch tele/+/json)
 url: https://github.com/smartnetz/smartnetz-gasreader-multi_addon
