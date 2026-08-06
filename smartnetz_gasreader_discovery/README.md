@@ -1,5 +1,7 @@
 Smartnetz Gasreader & Wasserreader MQTT Discovery Add-on (Für ein oder mehrere Smartnetz Gasreader)
+-##################  UPDATE IN VERSION 6.0.0 ############################
 
+Impementierung des SMARTNETZ VISION KI Wasserzählers 
 
 -##################  INSTALLATION  ############################
 1) Repository in Home Assistant Add-on Store  hinzufuegen
